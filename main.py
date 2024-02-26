@@ -1,103 +1,36 @@
-import xmlrpc.client
-import os
-import time
-from sqlalchemy import create_engine, Column, String, Boolean
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
-from dotenv import load_dotenv
+from fastapi import FastAPI, BackgroundTasks
+from datetime import datetime, timedelta
+from scheduler import update_contacts
+
+app = FastAPI()
+
+next_update_time = datetime.now() + timedelta(minutes=50)
 
 
-def main():
-    load_dotenv()
-
-    DATABASE_URL = os.getenv("DATABASE_URL")
-    Base = declarative_base()
-
-    class Contact(Base):
-        __tablename__ = "contacts"
-
-        id = Column(String, primary_key=True)
-        name = Column(String)
-        email = Column(String)
-        phone = Column(String)
-        is_company = Column(Boolean)
-        has_message = Column(Boolean)
-        is_blacklisted = Column(Boolean)
-        activity_state = Column(String)
-        activity_summary = Column(String)
-
-    def init_db():
-        engine = create_engine(DATABASE_URL)
-        Base.metadata.create_all(engine)
-        return sessionmaker(bind=engine)
-
-    url = os.getenv("ODOO_URL")
-    db = os.getenv("ODOO_DB")
-    username = os.getenv("ODOO_USERNAME")
-    password = os.getenv("ODOO_PASSWORD")
-
-    common = xmlrpc.client.ServerProxy(f"{url}/xmlrpc/2/common")
-    uid = common.authenticate(db, username, password, {})
-
-    if uid is False:
-        raise Exception("Échec de l'authentification, mauvais identifiants")
-
-    models = xmlrpc.client.ServerProxy(f"{url}/xmlrpc/2/object")
-    Session = init_db()
-
+async def background_task():
+    global next_update_time
     while True:
-        contacts_data = models.execute_kw(
-            db,
-            uid,
-            password,
-            "res.partner",
-            "search_read",
-            [[]],
-            {
-                "fields": [
-                    "id",
-                    "name",
-                    "email",
-                    "phone",
-                    "is_company",
-                    "is_blacklisted",
-                    "activity_state",
-                    "activity_summary",
-                ]
-            },
-        )
+        update_contacts()
+        next_update_time = datetime.now() + timedelta(minutes=50)
+        await asyncio.sleep(3000)
 
-        session = Session()
 
-        for partner in contacts_data:
-            contact = session.query(Contact).filter_by(id=str(partner["id"])).first()
+@app.on_event("startup")
+async def run_on_startup():
+    background_tasks = BackgroundTasks()
+    background_tasks.add_task(background_task)
 
-            if contact:
-                contact.name = partner.get("name")
-                contact.email = partner.get("email")
-                contact.phone = partner.get("phone")
-                contact.is_company = partner.get("is_company", False)
-                contact.is_blacklisted = partner.get("is_blacklisted")
-                contact.activity_state = partner.get("activity_state")
-                contact.activity_summary = partner.get("activity_summary")
-            else:
-                new_contact = Contact(
-                    id=str(partner["id"]),
-                    name=partner.get("name"),
-                    email=partner.get("email"),
-                    phone=partner.get("phone"),
-                    is_company=partner.get("is_company", False),
-                    is_blacklisted=partner.get("is_blacklisted"),
-                    activity_state=partner.get("activity_state"),
-                    activity_summary=partner.get("activity_summary"),
-                )
-                session.add(new_contact)
 
-        session.commit()
-
-        # 50 minutes avant la prochaine exécution
-        time.sleep(3000)
+@app.get("/")
+async def index():
+    time_remaining = next_update_time - datetime.now()
+    minutes, seconds = divmod(time_remaining.total_seconds(), 60)
+    return {
+        "message": f"Prochaine mise à jour dans {int(minutes)} minutes et {int(seconds)} secondes."
+    }
 
 
 if __name__ == "__main__":
-    main()
+    import uvicorn
+
+    uvicorn.run(app, host="0.0.0.0", port=8000)
