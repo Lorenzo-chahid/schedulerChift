@@ -12,7 +12,7 @@ async def background_task():
     while True:
         update_contacts()
         next_update_time = datetime.now() + timedelta(minutes=50)
-        await asyncio.sleep(3000)
+        await asyncio.sleep(1)
 
 
 @app.on_event("startup")
