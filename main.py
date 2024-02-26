@@ -23,7 +23,7 @@ async def run_on_startup():
 
 @app.get("/")
 async def index():
-    time_remaining = next_update_time - datetime.now()
+    time_remaining = 1
     minutes, seconds = divmod(time_remaining.total_seconds(), 60)
     return {
         "message": f"Prochaine mise à jour dans {int(minutes)} minutes et {int(seconds)} secondes."
