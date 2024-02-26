@@ -1,31 +1,24 @@
 from fastapi import FastAPI, BackgroundTasks
 from datetime import datetime, timedelta
-import asyncio  # N'oubliez pas d'importer asyncio
-
-from scheduler import (
-    update_contacts,
-)  # Assurez-vous que update_contacts est une coroutine asynchrone
+from scheduler import update_contacts
 
 app = FastAPI()
 
-next_update_time = datetime.now() + timedelta(minutes=1)  # Mise à jour pour une minute
+next_update_time = datetime.now() + timedelta(minutes=50)
 
 
 async def background_task():
     global next_update_time
     while True:
-        await update_contacts()  # Assurez-vous que cette fonction est asynchrone ou utilisez run_in_executor pour les fonctions synchrones
-        next_update_time = datetime.now() + timedelta(
-            minutes=1
-        )  # Mise à jour pour une minute
-        await asyncio.sleep(60)  # Attend 60 secondes avant de réexécuter
+        update_contacts()
+        next_update_time = datetime.now() + timedelta(minutes=50)
+        await asyncio.sleep(3000)
 
 
 @app.on_event("startup")
 async def run_on_startup():
-    asyncio.create_task(
-        background_task()
-    )  # Créez la tâche d'arrière-plan sans bloquer le démarrage
+    background_tasks = BackgroundTasks()
+    background_tasks.add_task(background_task)
 
 
 @app.get("/")
